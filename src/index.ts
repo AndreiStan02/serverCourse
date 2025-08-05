@@ -1,46 +1,39 @@
-import express, { NextFunction } from "express";
-import path from "path";
-import type { Request, Response } from "express";
-import { config } from "./config.js";
+import express from "express";
+
+import { handlerReadiness } from "./api/readiness.js";
+import { handlerMetrics } from "./api/metrics.js";
+import { handlerReset } from "./api/reset.js";
+import {
+  errorMiddleWare,
+  middlewareLogResponse,
+  middlewareMetricsInc,
+} from "./api/middleware.js";
+import { handlerChirpsValidate } from "./api/chirps.js";
 
 const app = express();
 const PORT = 8080;
 
-app.use(middlewareLogResponses);
-app.use("/app", middlewareMetricsInc,express.static("./src/app"));
+app.use(middlewareLogResponse);
+app.use(express.json());
 
-app.get("/api/healthz", (req, res) => {
-    res.set('Content-Type', 'text/plain');
-    res.send("OK");
+app.use("/app", middlewareMetricsInc, express.static("./src/app"));
+
+app.get("/api/healthz", (req, res, next) => {
+  Promise.resolve(handlerReadiness(req, res)).catch(next);
+});
+app.get("/admin/metrics", (req, res, next) => {
+  Promise.resolve(handlerMetrics(req, res)).catch(next);
+});
+app.post("/admin/reset", (req, res, next) => {
+  Promise.resolve(handlerReset(req, res)).catch(next);
 });
 
-app.get("/api/metrics", (req, res) => {
-    res.set('Content-Type', 'text/plain');
-    res.send(`Hits: ${config.fileserverHits}`);
+app.post("/api/validate_chirp", (req, res, next) => {
+  Promise.resolve(handlerChirpsValidate(req, res)).catch(next);
 });
 
-app.get("/api/reset", (req, res) => {
-    config.fileserverHits = 0;
-    res.set('Content-Type', 'text/plain');
-    res.send(`${config.fileserverHits}`);
-});
+app.use(errorMiddleWare);
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
-
-function middlewareLogResponses(req: Request, res: Response, next: NextFunction){
-  res.on("finish", () => {
-    if(res.statusCode > 299 || res.statusCode < 200){
-      console.log(`[NON-OK] ${req.method} ${req.url} - Status: ${res.statusCode}`);
-    }
-  });
-  next();
-}
-
-function middlewareMetricsInc(req: Request, res: Response, next: NextFunction){
-  res.on("finish", () => {
-    config.fileserverHits++;
-  });
-  next();
-}
